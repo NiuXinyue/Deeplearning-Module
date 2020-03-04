@@ -1,0 +1,11 @@
+class MobileNetV1Block(nn.Module):
+    def __init__(self, in_channels, out_channels, k_size, stride, padding=0, group=1):
+        super(MobileNetV1Block, self).__init__()
+        self.conlayer = nn.Sequential(
+            nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=k_size, stride=stride, padding=padding, groups=group),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU6(inplace=False)
+
+        )
+    def forward(self, x):
+        return self.conlayer(x)
