@@ -9,3 +9,48 @@ class MobileNetV1Block(nn.Module):
         )
     def forward(self, x):
         return self.conlayer(x)
+
+
+class MobileNetV1(nn.Module):
+    def __init__(self):
+        super(MobileNetV1, self).__init__()
+        self.conlayer = nn.Sequential(
+            MobileNetV1Block(3, 32, 3, 2, padding=1), #
+            MobileNetV1Block(32, 32, 3, 1, padding=1, group=32),
+            MobileNetV1Block(32, 64, 1, 1),
+            MobileNetV1Block(64, 64, 3, 2, padding=1, group=64),
+            MobileNetV1Block(64, 128, 1, 1),
+            MobileNetV1Block(128, 128, 3, 1, padding=1, group=128),
+            MobileNetV1Block(128, 128, 1, 1),
+            MobileNetV1Block(128, 128, 3, 2, padding=1, group=128),
+            MobileNetV1Block(128, 256, 1, 1),
+            MobileNetV1Block(256, 256, 3, 1, padding=1, group=256),
+            MobileNetV1Block(256, 256, 1, 1),
+            MobileNetV1Block(256, 256, 3, 2, padding=1, group=256),
+            MobileNetV1Block(256, 512, 1, 1),
+            #
+            MobileNetV1Block(512, 512, 3, 1, padding=1, group=512),
+            MobileNetV1Block(512, 512, 1, 1),
+            MobileNetV1Block(512, 512, 3, 1, padding=1, group=512),
+            MobileNetV1Block(512, 512, 1, 1),
+            MobileNetV1Block(512, 512, 3, 1, padding=1, group=512),
+            MobileNetV1Block(512, 512, 1, 1),
+            MobileNetV1Block(512, 512, 3, 1, padding=1, group=512),
+            MobileNetV1Block(512, 512, 1, 1),
+            MobileNetV1Block(512, 512, 3, 1, padding=1, group=512),
+            MobileNetV1Block(512, 512, 1, 1),
+
+            MobileNetV1Block(512, 512, 3, 2, padding=1, group=512),
+            MobileNetV1Block(512, 1024, 1, 1, ),
+            MobileNetV1Block(1024, 1024, 3, 1, padding=1, group=1024),
+            MobileNetV1Block(1024, 1024, 1, 1),
+             nn.AvgPool2d(7)
+                    )
+        self.lin = nn.Sequential(
+            nn.Linear(1024, 1000),
+            nn.Softmax(dim=1)
+        )
+    def forward(self, x):
+        out_con = self.conlayer(x)
+        out_con = out_con.reshape(1, -1)
+        return self.lin(out_con)
