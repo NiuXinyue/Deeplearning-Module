@@ -1,0 +1,18 @@
+def k_means(cen_num:int, x):
+    cen = torch.rand(cen_num, 1)
+    for i in range(50):
+        #SSE, 误差平方和
+        sse = (x - cen)**2
+        #取最后一行作为标签
+        values, label = torch.sort(sse, 0)
+        for i in range(cen_num):
+            index = torch.where(label[0]==i)[0]
+            cen[i] = torch.mean(x[index])
+    return torch.sum(values[0]).item()
+sse = []
+x = torch.rand(1, 10000).reshape(-1)
+for i in range(2, 50):
+    sse.append(k_means(i, x))
+    plt.plot(sse)
+    plt.show()
+    plt.pause(0.1)
