@@ -16,3 +16,24 @@ for i in range(2, 50):
     plt.plot(sse)
     plt.show()
     plt.pause(0.1)
+
+
+#二维
+def k_means2dim(cen_num:int, x, iterations):
+    cen = torch.rand(cen_num,1, 2)
+    for j in range(iterations):
+        sse = (x - cen) **2
+        sse = sse.sum(axis=(2))
+        values, label = torch.sort(sse, dim=0)
+        for i in range(cen_num):
+            index = torch.where(label[0]==i)[0]
+            cen[i] = torch.mean(x[index], axis=0)
+    return torch.sum(values[0]).item()
+   
+sse = []
+x = torch.rand(10000, 2)
+for i in range(2, 50):
+    sse.append(k_means2dim(i, x, 50))
+    plt.plot(sse)
+    plt.show()
+    plt.pause(0.1)
