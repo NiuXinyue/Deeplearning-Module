@@ -1,0 +1,56 @@
+#还没有写完，网络结构还不准确
+
+import torch.nn as nn
+import torch
+
+class ConBlock(nn.Module):
+        def __init__(self, in_channels, out_channels, kernal_size, stride,  padding=0, groups=1):  
+                super(ConBlock, self).__init__()
+                self.conlayer = nn.Sequential(
+                        nn.Conv2d(in_channels, out_channels, kernal_size,  stride, padding, groups=1),
+                        nn.BatchNorm2d(out_channels),
+                        nn.ReLU()
+                )
+
+        def forward(self,  x):
+                return self.conlayer(x)
+
+class PEPBlock(nn.Module):
+        def __init__(self,  in_channels, out_channels, num=1, kernal_size=1,  stride =1 , padding=0):
+                super(PEPBlock, self).__init__()
+                self.conlayer = nn.Sequential(
+                        ConBlock(in_channels, num, kernal_size = 1,  stride = 1, padding = 0,  groups = 1 ),
+                        ConBlock(num, 6 * num, kernal_size = 1, stride = 1, padding = 0, groups = 1),
+                        ConBlock(6 * num, 6 * num, kernal_size = kernal_size, stride = stride,  padding = padding, groups = 6*num),
+                        ConBlock(6 * num,  out_channels, kernal_size = 1, stride = 1, padding = 0, groups = 1)
+                )
+                
+        def forward(self, x):
+                return self.conlayer(x)
+
+class EP(nn.Module):
+        def __init__(self, in_channels, out_channels, kernal_size, stride, padding):
+                super(EP, self).__init__()
+                self.conlayer = nn.Sequential(
+                        ConBlock(in_channels, 6*in_channels, kernal_size = 1, stride = 1),
+                        ConBlock(6*in_channels, 6*in_channels, kernal_size = 3, stride = 1, padding= padding,  group = 6*in_channels),
+                        ConBlock(6*in_channels, ou_channels, kernal_size = 1, stride = 1 )
+                )
+                
+        def forward(self, x):
+                return self.conlayer(x)
+
+class FCA(nn.Module):
+        def __init__(self, in_features, out_features):
+                self.linearlayer = nn.Sequential(
+                        nn.Linear(in_features, out_features),
+                        nn.BatchNorm1d(out_features),
+                        nn.ReLU(),
+                
+                        nn.Linear(out_channels),
+                        nn.BatchNorm1d(out_features),
+                        nn.ReLU()
+                )
+        
+        def forward(self, x):
+                return self.linearlayer(x)
