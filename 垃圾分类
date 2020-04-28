@@ -1,0 +1,177 @@
+#导入文件
+import torch
+import torch.nn as nn
+import os
+from PIL import Image
+import numpy as np
+from torchvision import transforms
+#from torchvision.models import MobileNetV2
+import time 
+import gc
+import matplotlib.pyplot as plt
+import argv
+from torchstat import stat
+#将数据名及路径保存到txt文件
+def mk_File(dataPath, fileName = "dataFile.txt"):
+    file = open(fileName, "w")
+    #遍历文件夹
+    dirSet = sorted(os.listdir(dataPath))
+    print(dirSet)
+    for index, dr in enumerate(dirSet):
+        #打开文件夹
+        path = os.path.join(dataPath, dr)
+        #遍历图片
+        imgSet = os.listdir(path)
+        for imgName in imgSet:
+            #写入文件
+            file.write("{}\t{}\t\t{}\n".format(path, imgName, index))
+        gc.collect()
+    file.close()
+mk_File(dataPath=r"./dir/")
+
+#制作数据集
+class Dataset():
+    def __init__(self, filePath='./', fileName='dataFile.txt'):
+        self.file = open(os.path.join(filePath, fileName))  #打开文件
+        self.imgSet = self.file.readlines()  #读取文件
+        self.path = filePath  #文件路径
+        self.totensor = transforms.ToTensor()  #将图片变为 c, h, w 除255
+        self.mean = torch.tensor([0.6718, 0.6417, 0.6102]).reshape(-1, 1, 1)
+
+    #返回图片数量
+    def __len__(self):
+        return len(self.imgSet)
+    
+    def __getitem__(self, item):
+        #字符串由path, filename, identify(类别)构成
+        path, name, target = self.imgSet[item].split()
+        #open img
+        img = Image.open(os.path.join(path, name))
+        #totensor
+        imgT = self.totensor(img)
+        return (imgT-0.5)/0.5, int(target)
+
+
+class MobileNetV2Block(nn.Module):
+    def __init__(self, in_channels, out_channels, ksize=3, stride=1,  padding = 0, group=1):
+        super(MobileNetV2Block, self).__init__()
+        # print(out_channels)
+        t, decent_channel = out_channels
+        self.con = nn.Sequential(
+            #1*1升通道
+            nn.Conv2d(in_channels=in_channels, out_channels=t*in_channels, kernel_size=1, stride=1, padding=0, groups=in_channels),
+            nn.BatchNorm2d(t*in_channels),
+            nn.ReLU(),
+            #3*3融合像素
+            nn.Conv2d(t*in_channels, t*in_channels, kernel_size=ksize, stride=stride, padding=padding, groups=t*in_channels),
+            nn.BatchNorm2d(t*in_channels),
+            nn.ReLU(),
+            #1*1降低通道
+            nn.Conv2d(t*in_channels, decent_channel, kernel_size=1, stride=1, padding=0),
+            nn.BatchNorm2d(decent_channel)
+        )
+    def forward(self, x):
+        return self.con(x)
+
+
+
+class MobileNetV2(nn.Module):
+    def __init__(self):
+        super(MobileNetV2, self).__init__()
+        self.con = nn.Sequential(
+            nn.Conv2d(3, 32, 3, 2, 1),
+            MobileNetV2Block(32, (1, 16), ksize=3, stride=1, padding=1),
+
+            MobileNetV2Block(16, (6, 24), ksize=3, stride=1, padding=1),
+            MobileNetV2Block(24, (6, 24), ksize=3, stride=2, padding=1),
+            #
+            MobileNetV2Block(24, (6, 32), ksize=3, stride=1, padding=1),
+            MobileNetV2Block(32, (6, 32), ksize=3, stride=1, padding=1),
+            MobileNetV2Block(32, (6, 32), ksize=3, stride=2, padding=1),
+
+            MobileNetV2Block(32, (6, 64), ksize=3, stride=1, padding=1),
+            MobileNetV2Block(64, (6, 64), ksize=3, stride=1, padding=1))
+        
+        self.con2 = nn.Sequential(
+            MobileNetV2Block(64, (6, 64), ksize=3, stride=1, padding=1),
+            MobileNetV2Block(64, (6, 64), ksize=3, stride=2, padding=1),
+
+            MobileNetV2Block(64, (6, 96), ksize=3, stride=1, padding=1),
+            MobileNetV2Block(96, (6, 96), ksize=3, stride=1, padding=1),
+            MobileNetV2Block(96, (6, 96), ksize=3, stride=1, padding=1),
+
+            MobileNetV2Block(96,  (6, 160), ksize=3, stride=1, padding=1),
+            MobileNetV2Block(160, (6, 160), ksize=3, stride=1, padding=1),
+            MobileNetV2Block(160, (6, 160), ksize=3, stride=2, padding=1),
+            #
+            MobileNetV2Block(160, (6, 320), ksize=3, stride=1, padding=1),
+            MobileNetV2Block(320, (6, 320), ksize=3, stride=1, padding=1),
+            MobileNetV2Block(320, (6, 320), ksize=3, stride=1, padding=1),
+            nn.Conv2d(320, 6, 1, 1),
+            nn.ReLU()
+        )
+    def forward(self, x):
+        x = self.con(x)
+        x = self.selfAttention(x)  #加入注意力
+        x = self.con2(x)
+        x = x.mean(dim=(2, 3))
+        return x
+      #注意力函数
+    def selfAttention(self,feature_map):
+        n, c, h, w = feature_map.shape
+        Q = K =  V = torch.reshape(feature_map, shape=(n, c, h*w)).permute(0, 2, 1)
+        res = self.attention(Q, K, V, c)
+        res = res.permute(0, 2, 1)
+        return res.reshape(shape=(n, c, h, w))
+    def attention(self, Q, K, V, c):
+        K = K.permute(0, 2, 1)
+        return torch.softmax((Q @ K)/c**0.5, dim=2) @ V
+
+class Train():
+    def __init__(self, batchsize):
+        if os.path.exists("net_selfdifine.pth"):
+          self.net_mbv2 = torch.load("net_selfdifine.pth").to(device)
+          print("load success!")
+        else:
+          self.net_mbv2 = MobileNetV2().to(device)
+          print("create success!")
+        print(stat(self.net_mbv2, (3, 416, 416)))  #展示内存消耗、计算力要求
+        print(self.net_mbv2)  #展示网络结构
+        self.opt_adam = torch.optim.Adam(self.net_mbv2.parameters())
+        self.lossFunc = nn.CrossEntropyLoss()
+        self.dataset = Dataset()
+        self.dataLod = torch.utils.data.DataLoader(self.dataset, batchsize, shuffle=True)
+        self.datasetInv = Dataset(fileName="dataFileInv.txt")
+        self.dataLodInv = torch.utils.data.DataLoader(self.datasetInv, batchsize, shuffle=True)
+        print("batchsize:{}\t params_group:{}\t ".format(batchsize, self.opt_adam))
+    def train(self):
+        epoch = 0
+        begin = time.time()
+        loss_res = []
+        while True:
+            print("epoch:{}\t runtime:{}".format(epoch, time.time() - begin))
+            for index, (dataInput, target) in enumerate(self.dataLod):
+                output = self.net_mbv2(dataInput.to(device))
+                loss = self.lossFunc(output, target.to(device))
+                self.opt_adam.zero_grad()
+                loss.backward()
+                self.opt_adam.step()
+                if index % 2== 0:
+                    loss_res.append(loss.item())
+                    plt.plot(loss_res)
+                    plt.pause(0.01)
+                    plt.title("epoch:{}".format(epoch))
+                    print("total: {}\t current: {}\t loss: {}".format(len(self.dataLod), index, loss.item()))
+                    plt.savefig("./fig/{}_{}.jpg".format(epoch,index))
+                gc.collect()
+            torch.save(self.net_mbv2, "net_selfdifine.pth")
+            for dataIn ,targetIn in self.dataLodInv:
+              print(dataIn.shape, targetIn.shape)
+              output = self.net_mbv2(dataIn)
+              print("accuracy:{}".format(torch.mean(torch.tensor(output.argmax(dim=1).cpu().detach() == targetIn, dtype = torch.float32))))
+              gc.collect()
+
+
+device="cpu"
+train = Train(16)
+train.train()
