@@ -1,0 +1,112 @@
+
+
+import torch
+import torch.nn as nn
+import numpy  as np 
+from torch.autograd import Variable
+import matplotlib.pyplot as plt
+
+#目标函数
+def func(step):
+        return (np.sin(steps)/steps)**2 + 100 * (np.cos(steps) /steps)**3
+#采样间隔
+dt = 0.001
+#样本数量
+L = 1000
+steps = np.linspace(dt, 1, num=L, endpoint=True, dtype=np.float32)
+#样本值
+Zt = func(steps)
+
+#样本中最值
+val_max = np.max(Zt)
+val_min = np.min(Zt)
+print(val_max, val_min)
+
+#数据归一化
+scale = (Zt - val_min) /(val_max - val_min)
+print(scale.shape)
+
+#创建训练数据和标签,输入固定长度的数据量，标签为下一个索引的元素
+def createData(data, previous):
+        dataY = []
+        dataX = []
+        if  previous<=len(data):
+                for i in range(len(data) - previous):
+                        dataX.append(data[i:i+previous])
+                        dataY.append(data[i+previous])
+                return np.stack(dataX), np.stack(dataY)
+        assert previous >len(data), "输入无效"
+
+#训练数据制作
+dataX, dataY = createData(scale, 5)
+dataX, dataY = torch.from_numpy(dataX).reshape((-1, 1, 5)), torch.from_numpy(dataY).reshape((-1, 1, 1))
+#设置训练比例
+train_size = int(len(dataX)*0.7)
+train_x = dataX[:train_size]
+train_y = dataY[:train_size]
+print(train_x.shape, train_y.shape)
+
+
+#输出和标签对应，输出为n, 1, 1格式
+class LSTM(nn.Module):
+        def __init__(self):
+                super(LSTM,  self).__init__()
+                self.lstm = nn.LSTM(5, 32, 2)
+                self.linear = nn.Sequential(
+                        nn.Linear(32, 1),
+                        nn.ReLU() )
+
+        def forward(self, x):
+                #x [batch, childbatch, inputsize]
+                x1 , _= self.lstm(x)
+                n, s, v = x1.shape  #n = batch, s = childbatch = 1, v = 16, 
+                x2 = x1.reshape((-1, v))
+                x3 = self.linear(x2)
+                return x3.reshape((n, s, -1))
+class LSTM(nn.Module):
+        def __init__(self):
+                super(LSTM,self).__init__() 
+                self.lstm = nn.LSTM(5,16,2) 
+                self.out = nn.Linear(16,1) 
+        def forward(self,x):
+                x1,_ = self.lstm(x)  #in n, s = 1, v =5
+                n, s, v = x1.shape   #x1.shape = n, 1, 16
+                out = self.out(x1.view(-1,v)) 
+                out1 = out.reshape(n, s, -1) 
+                return out1
+#实例化对象
+net = LSTM()
+print(net)
+from torchstat import stat
+print(stat(net, (1, 1, 5)))
+#损失函数
+loss_func = nn.MSELoss()
+#优化器
+opt = torch.optim.Adam(net.parameters(), lr=0.002)
+for epoch in range(20):
+	
+        var_x = Variable(train_x).type(torch.float32)
+        var_y = Variable(train_y).type(torch.float32)
+        out = net(var_x)
+        loss = loss_func(out, var_y)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+        if epoch%10==0:
+                print("Epoch:{}\tLoss: {}".format(epoch, loss.item()))
+
+
+#测试数据（归一化后的）
+data_x1 = dataX.reshape(-1,1,5)
+pred = net(data_x1)
+plt.subplot(1, 2, 1)
+plt.plot(pred.view(-1).data, 'b', label='prediction')
+plt.subplot(1, 2, 2)
+plt.plot(dataY.view(-1), 'r', label='real')
+plt.legend(loc='best')
+
+
+#测试数据反算到归一化之前
+predicition = pred.detach().view(-1) * (val_max - val_min) + val_min
+plt.plot(predicition)
+
