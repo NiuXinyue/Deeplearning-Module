@@ -1,0 +1,76 @@
+class Convolutional(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding=0, groups=1):
+        super(Convolutional, self).__init__()
+        self.conlayer_1 = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding=padding, groups=groups),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True))
+    
+    def forward(self, x):
+        return self.conlayer_1(x)
+    
+class SqueezeBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=1, stride=1, padding=0, groups=1):
+        super(SqueezeBlock, self).__init__()
+        self.conlayer_1 = nn.Sequential(
+        Convolutional(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=0, groups=1))
+    
+    def forward(self, x):
+        return self.conlayer_1(x)
+        
+class Expand(nn.Module):
+    def __init__(self, in_channels, out_channels_1, out_channels_2):
+        super(Expand, self).__init__()
+        self.conlayer_1 = nn.Sequential(
+            Convolutional(in_channels, out_channels_1, kernel_size=1, stride=1, padding=0, groups=1),
+            Convolutional(out_channels_1, out_channels_2, kernel_size=3, stride=1, padding=1, groups=1))
+    def forward(self, x):
+        return self.conlayer_1(x)
+    
+class FireBlock(nn.Module):
+    def __init__(self, in_channels, out_channels_1, out_channels_2, out_channels_3):
+        super(FireBlock, self).__init__()
+        '''
+        输入特征图的h,w 和输出特征图的h,w相同
+        @param:in_channels, input chnnnels ,input_shape(n, c, h, w)
+        @param:out_channels_1, squeeze_block output (n, c, h, w), or expand block's input channels
+        @param:out_channels_2, expand中1*1卷积模块输出的通道， 同样是3*3卷积层的输入通道
+        @param:out_channels_3, expand中最后一层卷积的输出部分
+        '''
+        self.conlayer_1 = nn.Sequential(
+            SqueezeBlock(in_channels, out_channels_1), 
+            Expand(out_channels_1, out_channels_2, out_channels_3)
+        )
+    def forward(self, x):
+        return self.conlayer_1(x)
+
+class SqueezeNetNoShortcut(nn.Module):
+    def __init__(self, num_classes=4):
+        '''
+        @param:num_classes 网络模型最后输出的通道数， 即分类数
+        '''
+        super(SqueezeNetNoShortcut, self).__init__()
+        self.conlayer_1 = nn.Sequential(
+            Convolutional(3, 96, 7, 2, padding=115),
+            nn.MaxPool2d(2, 2),
+            FireBlock(96, 16, 64, 64), #squeeze输出通道数为expand中1*1和3*3输出通道数的1/4，构建一个瓶颈结构
+            FireBlock(64, 16, 64, 64),
+            FireBlock(64, 32, 128, 128),
+            nn.MaxPool2d(2, 2),
+            FireBlock(128, 32, 128, 128),
+            FireBlock(128, 48, 192, 192),
+            FireBlock(192, 48, 192, 192),
+            FireBlock(192, 64, 256, 256),
+            nn.MaxPool2d(2, 2),
+            FireBlock(256, 64, 256, 256),
+            nn.Dropout2d(0.5),
+            Convolutional(256, num_classes, kernel_size=1, stride=1),
+        )
+    
+    def forward(self, x):
+        x = self.conlayer_1(x)
+        return torch.mean(x, (2, 3))
+    
+x = torch.randn(2, 3, 224, 224)
+model = SqueezeNetNoShortcut(4)
+model(x).shape
